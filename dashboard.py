@@ -481,3 +481,57 @@ with col_rel_2:
         * **Severity:** It clearly shows that the majority of hours fall into the **Very Poor** and **Severe** categories, confirming the chronic nature of the air pollution crisis.
         """
     )
+
+# --- 5b. KPI Dashboard Plot (Matplotlib Version) ---
+
+st.header("KPI Dashboard (Historical Metrics Visualized)")
+
+fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+fig.suptitle('Key Performance Indicators of Delhi Air Quality', fontsize=20, fontweight='bold')
+
+# KPI 1: Overall Mean AQI
+ax1 = axes[0]
+ax1.set_facecolor('#f7f7f7')
+mean_aqi_color = get_aqi_color(kpis['mean_aqi'])
+ax1.text(0.5, 0.7, f"{kpis['mean_aqi']:.1f}", ha='center', va='center', fontsize=50, color=mean_aqi_color, fontweight='bold')
+ax1.text(0.5, 0.35, "Overall Mean AQI", ha='center', va='center', fontsize=14, color='gray')
+ax1.set_xticks([])
+ax1.set_yticks([])
+for spine in ax1.spines.values():
+    spine.set_visible(False)
+ax1.set_xlim(0, 1)
+ax1.set_ylim(0, 1)
+
+# KPI 2: Percentage of Severe/Very Poor Hours
+ax2 = axes[1]
+percentage_color = '#c9302c'
+ax2.text(0.5, 0.7, f"{kpis['severe_pct']:.1f}%", ha='center', va='center', fontsize=50, color=percentage_color, fontweight='bold')
+ax2.text(0.5, 0.35, "Hours AQI > 300", ha='center', va='center', fontsize=14, color='gray')
+# Progress bar
+rect_width = 0.8
+rect_height = 0.1
+rect_y = 0.15
+ax2.add_patch(Rectangle((0.1, rect_y), rect_width, rect_height, facecolor='#ddd'))
+ax2.add_patch(Rectangle((0.1, rect_y), rect_width * (kpis['severe_pct']/100), rect_height, facecolor=percentage_color))
+ax2.set_xticks([])
+ax2.set_yticks([])
+for spine in ax2.spines.values():
+    spine.set_visible(False)
+ax2.set_xlim(0, 1)
+ax2.set_ylim(0, 1)
+
+# KPI 3: Worst Month Mean AQI
+ax3 = axes[2]
+ax3.set_facecolor('#f7f7f7')
+worst_month_color = get_aqi_color(kpis['worst_month_aqi'])
+ax3.text(0.5, 0.7, f"{kpis['worst_month_aqi']:.1f}", ha='center', va='center', fontsize=50, color=worst_month_color, fontweight='bold')
+ax3.text(0.5, 0.35, f"Worst Month: {kpis['worst_month_name']}", ha='center', va='center', fontsize=14, color='gray')
+ax3.set_xticks([])
+ax3.set_yticks([])
+for spine in ax3.spines.values():
+    spine.set_visible(False)
+ax3.set_xlim(0, 1)
+ax3.set_ylim(0, 1)
+
+plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+st.pyplot(fig)
