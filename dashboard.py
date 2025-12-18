@@ -273,6 +273,11 @@ with col_live_2:
         ax_pollutant.set_xlabel("Pollutant Sub-AQI Value")
         ax_pollutant.set_ylabel("")
         
+        # --- Add numeric labels to pollutant bars ---
+        for p in ax_pollutant.patches:
+            width = p.get_width()
+            ax_pollutant.text(width + 3, p.get_y() + p.get_height()/2, f"{width:.0f}", va='center', fontsize=9)
+        
         st.pyplot(fig_pollutant)
     elif selected_station_name == 'Delhi (City Average)':
         st.info("Individual pollutant breakdown is not available for the 'City Average' calculation.")
@@ -288,28 +293,19 @@ st.header("Real-Time Air Quality Across All Delhi Stations")
 if not df_all_stations.empty:
     st.markdown(f"*{all_stations_status}*")
     
-    # Define a simple function to apply color coding to the Category column
-    # NOTE: The lambda for df.style.map applies the function cell-by-cell.
     def color_category(val):
-        # We need the AQI value associated with this row to get the color, but map() only gets the cell value.
-        # Streamlit's data styling is often simpler: using a dictionary to map Category names to colors.
         color_map = {
             'Good': '#5cb85c', 'Satisfactory': '#F0E68C', 'Moderate': '#FFA500', 
             'Poor': '#FF4500', 'Very Poor': '#A52A2A', 'Severe': '#800000'
         }
-        # Get the background color
         bg_color = color_map.get(val, 'gray')
-        # Ensure text is white for darker backgrounds for readability
         text_color = 'white' if val in ['Poor', 'Very Poor', 'Severe'] else 'black'
-        
         return f'background-color: {bg_color}; color: {text_color}; font-weight: bold;'
     
-    # Apply styling only to the Category column
     styled_df = df_all_stations.sort_values(by='AQI', ascending=False).style.map(
         color_category, subset=['Category']
     )
     
-    # Streamlit displays the styled DataFrame
     st.dataframe(
         styled_df,
         use_container_width=True,
@@ -321,36 +317,7 @@ else:
 
 st.markdown("---")
 
-# --- 5. HISTORICAL PERFORMANCE METRICS (KPIs) ---
-
-st.header("Historical Performance Metrics (2020-2024 Analysis)")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.metric(
-        label="Overall Mean AQI (Historical)", 
-        value=f"{kpis['mean_aqi']:.1f}",
-        delta_color="off",
-        help="Average AQI across the entire dataset period."
-    )
-with col2:
-    st.metric(
-        label="Hours AQI > 300 (Very Poor/Severe)", 
-        value=f"{kpis['severe_pct']:.1f}%",
-        delta_color="off",
-        help="Percentage of time the air quality was in the most hazardous categories."
-    )
-with col3:
-    st.metric(
-        label=f"Worst Month Mean AQI ({kpis['worst_month_name']})", 
-        value=f"{kpis['worst_month_aqi']:.1f}",
-        delta_color="off",
-        help="Average AQI during the most polluted month of the year."
-    )
-st.markdown("---")
-
-# --- 6. VISUALIZATIONS (Historical) ---
+# --- 5. VISUALIZATIONS (Historical) ---
 
 st.header("Detailed Historical Analysis (Long-Term Trends)")
 
@@ -364,176 +331,117 @@ ax_daily.axhline(y=200, color='orange', linestyle='--', label='AQI 200 (Moderate
 ax_daily.axhline(y=400, color='red', linestyle='--', label='AQI 400 (Severe Threshold)')
 ax_daily.set_title('Daily Mean Overall AQI Trend Over Time')
 ax_daily.set_xlabel("Date")
-ax_daily.set_ylabel("Daily Mean AQI")
+ax_daily.set_ylabel("AQI")
 ax_daily.legend()
-ax_daily.grid(axis='y', alpha=0.5)
+
+# --- Annotate every ~30th point to avoid clutter ---
+for i in range(0, len(df_daily), 30):
+    x, y = df_daily['date'].iloc[i], df_daily['overall_aqi'].iloc[i]
+    if not pd.isna(y):
+        ax_daily.text(x, y + 15, f"{y:.0f}", fontsize=9, color='#8E44AD', fontweight='bold',
+                ha='center', va='bottom', zorder=3,
+                bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
+
 st.pyplot(fig_daily)
-st.markdown(
-    """
-    * **Long-Term Trend:** This chart displays the daily average Air Quality Index, revealing the overall year-on-year volatility and the severity of pollution spikes.
-    * **Severity:** Notice the recurrent, high AQI values (often exceeding the 400 Severe threshold) typically associated with the winter months.
-    """
+
+# Monthly Average PM Concentration
+st.subheader("Monthly Average PM Concentration")
+monthly_avg = df.groupby('month')[['pm2_5', 'pm10']].mean().reset_index()
+monthly_avg['month_name'] = monthly_avg['month'].apply(lambda x: calendar.month_abbr[x])
+
+fig_monthly, ax_monthly = plt.subplots(figsize=(12, 5))
+ax_monthly.plot(monthly_avg['month_name'], monthly_avg['pm2_5'], marker='o', label='PM2.5 (µg/m³)', color='#E37A49')
+ax_monthly.plot(monthly_avg['month_name'], monthly_avg['pm10'], marker='o', label='PM10 (µg/m³)', color='#5DADE2')
+ax_monthly.set_title('Monthly Average PM Concentration')
+ax_monthly.set_xlabel('Month')
+ax_monthly.set_ylabel('Concentration (µg/m³)')
+ax_monthly.legend()
+
+# --- Add numeric labels on each point ---
+for i, month in enumerate(monthly_avg['month_name']):
+    y_pm25 = monthly_avg['pm2_5'].iloc[i]
+    y_pm10 = monthly_avg['pm10'].iloc[i]
+    ax_monthly.text(i, y_pm25 + 7, f"{y_pm25:.1f}", color='#E37A49', fontsize=8, ha='center', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))
+    ax_monthly.text(i, y_pm10 + 7, f"{y_pm10:.1f}", color='#5DADE2', fontsize=8, ha='center',bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))
+
+st.pyplot(fig_monthly)
+
+# Weekly Trend (Bar plot with two pollutants)
+st.subheader("Weekly PM2.5 and PM10 Concentrations")
+day_of_week_avg = df.groupby('day_of_week')[['pm2_5', 'pm10']].mean().reindex(
+    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+).reset_index()
+
+x = np.arange(len(day_of_week_avg))
+bar_width = 0.35
+
+fig_weekly, ax_weekly = plt.subplots(figsize=(12, 5))
+bars_pm25 = ax_weekly.bar(x - bar_width/2, day_of_week_avg['pm2_5'], bar_width, label='PM2.5', color='#E37A49')
+bars_pm10 = ax_weekly.bar(x + bar_width/2, day_of_week_avg['pm10'], bar_width, label='PM10', color='#5DADE2')
+
+ax_weekly.set_xticks(x)
+ax_weekly.set_xticklabels(day_of_week_avg['day_of_week'])
+ax_weekly.set_title('Average PM Concentrations by Day of Week')
+ax_weekly.set_ylabel('Concentration (µg/m³)')
+ax_weekly.legend()
+
+# --- Add numeric labels above each bar ---
+for bar in bars_pm25:
+    height = bar.get_height()
+    ax_weekly.text(bar.get_x() + bar.get_width()/2, height + 0.5, f"{height:.1f}", ha='center', va='bottom', fontsize=8, color='#E37A49')
+
+for bar in bars_pm10:
+    height = bar.get_height()
+    ax_weekly.text(bar.get_x() + bar.get_width()/2, height + 0.5, f"{height:.1f}", ha='center', va='bottom', fontsize=8, color='#5DADE2')
+
+st.pyplot(fig_weekly)
+
+# AQI Category Distribution Bar Chart
+st.subheader("AQI Category Distribution (Hours)")
+aqi_counts = df['aqi_category'].value_counts().reindex(
+    ['Good', 'Satisfactory', 'Moderate', 'Poor', 'Very Poor', 'Severe'], fill_value=0
+).reset_index()
+aqi_counts.columns = ['AQI Category', 'Count (Hours)']
+
+fig_dist, ax_dist = plt.subplots(figsize=(10, 5))
+aqi_colors = ['#5cb85c', '#F0E68C', '#FFA500', '#FF4500', '#A52A2A', '#800000']
+
+bars = sns.barplot(
+    x='Count (Hours)', 
+    y='AQI Category', 
+    data=aqi_counts, 
+    palette=sns.color_palette(aqi_colors),
+    ax=ax_dist
 )
 
+ax_dist.set_title('Distribution of AQI Categories (Hourly Count)')
+ax_dist.set_xlabel('Count (Hours)')
+ax_dist.set_ylabel('AQI Category')
 
-# Seasonal Trend (Monthly)
-st.subheader("Seasonal and Weekly Variation")
-col_trend_1, col_trend_2 = st.columns(2)
+# --- Add numeric labels on bars ---
+for p in ax_dist.patches:
+    width = p.get_width()
+    ax_dist.text(width + 10, p.get_y() + p.get_height()/2, f"{int(width)}", va='center', fontsize=9)
 
-with col_trend_1:
-    # Monthly Avg Plot
-    monthly_avg = df.groupby('month')[['pm2_5', 'pm10']].mean().reset_index()
-    monthly_avg['month_name'] = monthly_avg['month'].apply(lambda x: calendar.month_abbr[x])
-    
-    fig_monthly, ax_monthly = plt.subplots(figsize=(8, 5))
-    ax_monthly.plot(monthly_avg['month_name'], monthly_avg['pm2_5'], marker='o', label='PM2.5 (µg/m³)', color='#E37A49')
-    ax_monthly.plot(monthly_avg['month_name'], monthly_avg['pm10'], marker='o', label='PM10 (µg/m³)', color='#5DADE2')
-    ax_monthly.set_title('Monthly Average PM Concentration (Seasonal Trend)')
-    ax_monthly.set_xlabel('Month')
-    ax_monthly.set_ylabel('Average Concentration')
-    ax_monthly.legend()
-    ax_monthly.grid(axis='y', linestyle='--', alpha=0.7)
-    st.pyplot(fig_monthly)
-    st.markdown(
-        """
-        * **Seasonal Pattern:** This chart shows that PM pollution peaks dramatically in the winter months (Nov-Jan) and is lowest during the monsoon (Jul-Aug).
-        * **Pollutant Dominance:** PM10 levels consistently track higher than PM2.5 across all seasons, though both follow the same strong seasonal cycle.
-        """
-    )
+st.pyplot(fig_dist)
 
+st.markdown("---")
 
-with col_trend_2:
-    # Weekly Trend Plot
-    day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-    day_of_week_avg = df.groupby('day_of_week')[['pm2_5', 'pm10']].mean().reindex(day_order).reset_index()
+# KPI Dashboard (Summary Boxes with big numbers)
+st.header("Summary Dashboard: Key Metrics Overview")
 
-    fig_weekly, ax_weekly = plt.subplots(figsize=(8, 5))
-    bar_width = 0.35
-    x = np.arange(len(day_order))
-    ax_weekly.bar(x - bar_width/2, day_of_week_avg['pm2_5'], bar_width, label='PM2.5', color='#E37A49')
-    ax_weekly.bar(x + bar_width/2, day_of_week_avg['pm10'], bar_width, label='PM10', color='#5DADE2')
-    ax_weekly.set_title('Weekly Trend (The Weekend Effect)')
-    ax_weekly.set_xlabel('Day of the Week')
-    ax_weekly.set_ylabel('Average Concentration')
-    ax_weekly.set_xticks(x)
-    ax_weekly.set_xticklabels(day_order, rotation=45, ha="right")
-    ax_weekly.legend()
-    st.pyplot(fig_weekly)
-    st.markdown(
-        """
-        * **The Weekend Effect:** Average pollution levels are noticeably lower on Saturday and Sunday compared to the peak weekday period (Mon-Thu).
-        * **Source Implication:** This suggests weekday anthropogenic sources (e.g., commercial traffic, industrial activity) are major contributors to Delhi's air pollution.
-        """
-    )
+fig_kpi, axs = plt.subplots(1, 3, figsize=(15, 4))
 
+kpi_titles = [
+    "Overall Mean AQI (Historical)",
+    "Hours > 300 AQI (%)",
+    f"Worst Month Mean AQI ({kpis['worst_month_name']})"
+]
+kpi_values = [kpis['mean_aqi'], kpis['severe_pct'], kpis['worst_month_aqi']]
 
-# Pollutant Relationships and Distribution
-st.header("Pollutant Relationships and Distribution")
+for ax, title, val in zip(axs, kpi_titles, kpi_values):
+    ax.axis('off')
+    ax.text(0.5, 0.6, f"{val:.1f}", fontsize=45, ha='center', va='center', fontweight='bold', color='#8E44AD')
+    ax.text(0.5, 0.25, title, fontsize=14, ha='center', va='center')
 
-col_rel_1, col_rel_2 = st.columns(2)
-
-with col_rel_1:
-    # Correlation Heatmap
-    st.subheader("Pollutant Correlation Heatmap")
-    pollutant_columns = ['co', 'no', 'no2', 'o3', 'so2', 'pm2_5', 'pm10', 'nh3']
-    correlation_matrix = df[pollutant_columns].corr()
-    
-    fig_corr, ax_corr = plt.subplots(figsize=(8, 6))
-    sns.heatmap(
-        correlation_matrix,
-        annot=True,
-        cmap='coolwarm',
-        fmt=".2f",
-        linewidths=.5,
-        ax=ax_corr
-    )
-    st.pyplot(fig_corr)
-    st.markdown(
-        """
-        * **Source Linkage:** High positive correlation (near +1.0) between PM2.5, PM10, and CO strongly indicates **combustion sources** (like vehicles and biomass burning) are co-emitting these pollutants.
-        * **Ozone:** The inverse correlation with O3 (Ozone) suggests that nitrogen oxides (NOx) are actively consuming O3 during high-traffic periods, a common urban chemical dynamic.
-        """
-    )
-
-
-with col_rel_2:
-    # AQI Category Distribution Bar Chart
-    st.subheader("Historical AQI Category Distribution")
-    aqi_counts = df['aqi_category'].value_counts().reset_index()
-    aqi_counts.columns = ['AQI Category', 'Count (Hours)']
-    category_order = ['Good', 'Satisfactory', 'Moderate', 'Poor', 'Very Poor', 'Severe']
-    aqi_counts['AQI Category'] = pd.Categorical(aqi_counts['AQI Category'], categories=category_order, ordered=True)
-    aqi_counts = aqi_counts.sort_values('AQI Category').reset_index(drop=True)
-    
-    aqi_colors = ['#5cb85c', '#F0E68C', '#FFA500', '#FF4500', '#A52A2A', '#800000']
-    
-    fig_dist, ax_dist = plt.subplots(figsize=(8, 6))
-    sns.barplot(
-        x='Count (Hours)', 
-        y='AQI Category', 
-        data=aqi_counts, 
-        palette=sns.color_palette(aqi_colors),
-        ax=ax_dist
-    )
-    st.pyplot(fig_dist)
-    st.markdown(
-        """
-        * **Air Quality Burden:** This chart visualizes the number of hours recorded in each air quality category over the entire historical period.
-        * **Severity:** It clearly shows that the majority of hours fall into the **Very Poor** and **Severe** categories, confirming the chronic nature of the air pollution crisis.
-        """
-    )
-
-# --- 5b. KPI Dashboard Plot (Matplotlib Version) ---
-
-st.header("KPI Dashboard (Historical Metrics Visualized)")
-
-fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-fig.suptitle('Key Performance Indicators of Delhi Air Quality', fontsize=20, fontweight='bold')
-
-# KPI 1: Overall Mean AQI
-ax1 = axes[0]
-ax1.set_facecolor('#f7f7f7')
-mean_aqi_color = get_aqi_color(kpis['mean_aqi'])
-ax1.text(0.5, 0.7, f"{kpis['mean_aqi']:.1f}", ha='center', va='center', fontsize=50, color=mean_aqi_color, fontweight='bold')
-ax1.text(0.5, 0.35, "Overall Mean AQI", ha='center', va='center', fontsize=14, color='gray')
-ax1.set_xticks([])
-ax1.set_yticks([])
-for spine in ax1.spines.values():
-    spine.set_visible(False)
-ax1.set_xlim(0, 1)
-ax1.set_ylim(0, 1)
-
-# KPI 2: Percentage of Severe/Very Poor Hours
-ax2 = axes[1]
-percentage_color = '#c9302c'
-ax2.text(0.5, 0.7, f"{kpis['severe_pct']:.1f}%", ha='center', va='center', fontsize=50, color=percentage_color, fontweight='bold')
-ax2.text(0.5, 0.35, "Hours AQI > 300", ha='center', va='center', fontsize=14, color='gray')
-# Progress bar
-rect_width = 0.8
-rect_height = 0.1
-rect_y = 0.15
-ax2.add_patch(Rectangle((0.1, rect_y), rect_width, rect_height, facecolor='#ddd'))
-ax2.add_patch(Rectangle((0.1, rect_y), rect_width * (kpis['severe_pct']/100), rect_height, facecolor=percentage_color))
-ax2.set_xticks([])
-ax2.set_yticks([])
-for spine in ax2.spines.values():
-    spine.set_visible(False)
-ax2.set_xlim(0, 1)
-ax2.set_ylim(0, 1)
-
-# KPI 3: Worst Month Mean AQI
-ax3 = axes[2]
-ax3.set_facecolor('#f7f7f7')
-worst_month_color = get_aqi_color(kpis['worst_month_aqi'])
-ax3.text(0.5, 0.7, f"{kpis['worst_month_aqi']:.1f}", ha='center', va='center', fontsize=50, color=worst_month_color, fontweight='bold')
-ax3.text(0.5, 0.35, f"Worst Month: {kpis['worst_month_name']}", ha='center', va='center', fontsize=14, color='gray')
-ax3.set_xticks([])
-ax3.set_yticks([])
-for spine in ax3.spines.values():
-    spine.set_visible(False)
-ax3.set_xlim(0, 1)
-ax3.set_ylim(0, 1)
-
-plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-st.pyplot(fig)
-
+st.pyplot(fig_kpi)
